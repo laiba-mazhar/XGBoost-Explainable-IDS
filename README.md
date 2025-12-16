@@ -34,11 +34,19 @@ traditional IDS pipelines by integrating:
 │   └── run_repeats_xgb.py
 │
 └── paper/
-    ├── main.tex
-    ├── references.bib
-    └── figures/
-        ├── macro_f1_across_seeds.png
-        └── severity_distribution.png
+   ├── main.tex
+   ├── references.bib
+   ├── figures/
+   │   ├── architecture.png
+   │   ├── class_distribution.png
+   │   ├── accuracy_boxplot.png
+   │   ├── f1_trend.png
+   │   ├── macro_f1_across_seeds.png
+   │   ├── severity_distribution.png
+   │   ├── severity_score_comp.png
+   │   ├── explainable_alert_pkt_SOC.png
+   │   └── shap_local_explanation_for_alert.png
+
 ````
 
 ---
@@ -93,6 +101,23 @@ Low, Medium, High, and Critical.
 This enables actionable and evidence-backed SOC decision-making.
 
 ---
+
+## Large Files and Experimental Artifacts
+
+Due to GitHub size limitations, large experimental artifacts are hosted externally.
+
+The following items are available via Google Drive:
+- Preprocessed datasets
+- Trained model files
+- SHAP output directories
+- Alert logs and severity reports
+- Full experimental outputs across all random seeds
+
+🔗 **Google Drive Link:**  
+[https://drive.google.com/your-drive-link-here](https://drive.google.com/drive/folders/1WWJ4mUWDUK1Z3wx7DlCVpAzcHSDa55UH?usp=drive_link)
+
+Access permissions: View-only
+
 
 ## Authors
 
