@@ -37,15 +37,15 @@ traditional IDS pipelines by integrating:
    ├── main.tex
    ├── references.bib
    ├── figures/
-   │   ├── architecture.png
-   │   ├── class_distribution.png
-   │   ├── accuracy_boxplot.png
-   │   ├── f1_trend.png
-   │   ├── macro_f1_across_seeds.png
-   │   ├── severity_distribution.png
-   │   ├── severity_score_comp.png
-   │   ├── explainable_alert_pkt_SOC.png
-   │   └── shap_local_explanation_for_alert.png
+       ├── architecture.png
+       ├── class_distribution.png
+       ├── accuracy_boxplot.png
+       ├── f1_trend.png
+       ├── macro_f1_across_seeds.png
+       ├── severity_distribution.png
+       ├── severity_score_comp.png
+       ├── explainable_alert_pkt_SOC.png
+       └── shap_local_explanation_for_alert.png
 
 ````
 
