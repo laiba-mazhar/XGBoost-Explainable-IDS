@@ -1,0 +1,25 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environments
+venv/
+.env/
+
+# Data and outputs
+data/
+datasets/
+results/
+shap_outputs/
+trained_models/
+outputs/
+unsw_outputs*
+
+# Models
+*.pkl
+*.joblib
+
+# OS files
+.DS_Store
+Thumbs.db
