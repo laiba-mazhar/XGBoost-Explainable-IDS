@@ -114,7 +114,7 @@ The following items are available via Google Drive:
 - Full experimental outputs across all random seeds
 
 🔗 **Google Drive Link:**  
-[https://drive.google.com/your-drive-link-here](https://drive.google.com/drive/folders/1WWJ4mUWDUK1Z3wx7DlCVpAzcHSDa55UH?usp=drive_link)
+[https://drive.google.com/drive/folders/1WWJ4mUWDUK1Z3wx7DlCVpAzcHSDa55UH?usp=drive_link](https://drive.google.com/drive/folders/1WWJ4mUWDUK1Z3wx7DlCVpAzcHSDa55UH?usp=drive_link)
 
 Access permissions: View-only
 
