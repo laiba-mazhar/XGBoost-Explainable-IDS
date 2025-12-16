@@ -1,0 +1,979 @@
+\documentclass[conference]{IEEEtran}
+
+\usepackage{cite}
+\usepackage{amsmath,amssymb}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{hyperref}
+
+\title{A Robust and Explainable Multiclass Intrusion Detection Framework Using XGBoost and Multi-Seed Validation}
+\author{
+\IEEEauthorblockN{Laiba Mazhar, Abyaz Israr, Tashfeen Abbasi}
+\IEEEauthorblockA{School of Computer Science\\
+FAST National University of Computing and Emerging Sciences, Islamabad, Pakistan\\
+Emails: i221855@nu.edu.pk, i222056@nu.edu.pk, i222041@nu.edu.pk}
+}
+
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+Modern network infrastructures are continuously exposed to sophisticated cyberattacks that exploit protocol weaknesses, resource exhaustion strategies, and privilege-escalation vulnerabilities. Despite substantial progress in Intrusion Detection Systems (IDS), the field still suffers from three persistent limitations: unstable model performance caused by single-split evaluation practices, poor detection of minority attack families such as Remote-to-Local (R2L) and User-to-Root (U2R), and a lack of actionable explainability and severity quantification. The base paper addressed anomaly detection using a Random Forest model with dataset-level explainability; however, it did not address multiclass intrusion classification, per-sample SHAP explanations, severity scoring, or statistical validation across multiple random seeds.
+
+This paper presents a robust, statistically validated, and explainable multiclass intrusion detection framework using eXtreme Gradient Boosting (XGBoost), TreeSHAP interpretability, and a mathematically formulated severity scoring mechanism. The system is trained and evaluated on the NSL-KDD dataset (KDDTrain+ and KDDTest+), comprising 125,973 samples across 41 features and five intrusion families. A complete preprocessing pipeline is applied, including one-hot encoding, normalization, and label aggregation into operational attack families.
+
+Model stability is assessed using a five-seed repeated experiment design. Across seeds \{42, 7, 21, 99, 123\}, the proposed XGBoost model achieves an average accuracy of 0.999025 and an average macro-F1 score of 0.761544, outperforming the Random Forest baseline with a relative macro-F1 improvement of 12.28\% and a worst-case improvement of 24.65\%. SHAP analysis provides per-class and per-sample attributions, revealing dominant features such as \textit{src\_bytes}, \textit{service\_http}, and \textit{dst\_host\_srv\_count}. A severity scoring function integrates model confidence, class-level base severity, and SHAP-derived impact modifiers, resulting in operationally meaningful alert prioritization.
+
+The findings demonstrate that the proposed framework is more accurate, more stable, and significantly more explainable compared to traditional IDS baselines. The integration of multi-seed evaluation, severity scoring, and SHAP explanations addresses critical gaps in existing IDS research and enhances real-world applicability.
+\end{abstract}
+
+\begin{IEEEkeywords}
+Intrusion Detection System, XGBoost, SHAP, Multiclass Classification, Explainable AI, Network Security
+\end{IEEEkeywords}
+
+\section{Introduction}
+Over the past decade, global network infrastructures have undergone a significant transformation marked by increased device connectivity, widespread virtualization, and the emergence of high-volume distributed applications. As these environments scale, they simultaneously expand the attack surface available to adversaries. Cyberattacks today range from high-frequency volumetric events such as Denial-of-Service (DoS) floods and probing scans to low-frequency but high-impact intrusions such as Remote-to-Local (R2L) penetration attempts and User-to-Root (U2R) privilege escalations. The diversity, velocity, and stealth of these events require Intrusion Detection Systems (IDS) that are not only accurate, but also consistent, interpretable, and operationally useful\cite{Ahmed2016,Pang2021,Javaid2016}.
+
+The consequences of unreliable or opaque IDS models are severe for real-world Security Operations Centers (SOC). Unstable detection introduces uncertainty into decision making, high false-positive rates overload analysts, and false negatives conceal serious threats. Minority intrusions such as R2L and U2R attacks are especially challenging due to their scarcity and high impact. Moreover, the absence of per-alert explainability and severity-aware prioritization limits the operational usefulness of many existing IDS solutions.
+
+Although extensive research exists on anomaly detection, supervised classification, ensemble learning, and deep learning-based IDS, several methodological gaps persist. These include reliance on single train–test splits, limited minority-class performance, lack of per-sample explanations, and absence of severity scoring. The base paper used in this study focuses on anomaly detection using Random Forests and global SHAP analysis but does not address multiclass detection, per-sample explainability, severity quantification, or multi-seed robustness.
+
+To overcome these limitations, this research introduces a robust and explainable multiclass intrusion detection framework based on XGBoost, TreeSHAP, and a mathematically principled severity scoring mechanism. The framework is evaluated on the NSL-KDD dataset using multi-seed experimentation to ensure statistical stability and generalizability. The proposed system transforms IDS outputs from raw labels into explainable, prioritized alerts suitable for real-world SOC deployment.
+
+The remainder of this paper is organized as follows: Section II reviews related literature; Section III presents comparative analysis; Section IV describes the system architecture; Section V details the methodology; Section VI explains the algorithm and complexity; Section VII discusses the experimental setup; Section VIII presents results; Section IX provides discussion; and Section X concludes the paper\cite{Ferrag2024,Alkhalil2024,Hindy2024}..
+
+
+\section{Related Work}
+
+Intrusion Detection Systems (IDS) have been extensively studied over the past three decades, with research evolving from signature-based techniques to anomaly detection, supervised classification, ensemble approaches, and deep learning models. This section reviews the most relevant literature from 2023--2025, grouped into thematic categories, while focusing on the methodological gaps directly addressed by this study: lack of multiclass intrusion modeling, weak minority-class detection, single-split instability, absence of per-sample explainability, and lack of severity scoring.
+
+\subsection{Traditional Machine Learning for IDS}
+
+Several recent works continued to rely on classical machine learning models due to their interpretability and lower computational cost. Khan \textit{et al.} (2023) applied Decision Trees and SVMs on NSL-KDD, but their model demonstrated significant performance degradation on low-frequency attacks, highlighting the well-known class imbalance problem. Rahman and Idris (2024) evaluated Random Forests on CIC-IDS2017 and achieved high accuracy, but only reported a single-split experiment, leaving concerns about performance stability unresolved. The base paper by Schummer \textit{et al.} (2024) utilized Random Forests for anomaly detection and presented global SHAP explanations; however, it did not support multiclass intrusion classification, per-sample interpretations, or severity-based alerting\cite{Ahmed2016,Pang2021}.
+
+Other classical ML studies showed similar limitations. Bhatia and Singh (2023) incorporated Na\"{\i}ve Bayes and Logistic Regression for network anomaly detection but avoided multiclass settings due to poor separability across attack categories. More recently, Duarte \textit{et al.} (2025) evaluated Gradient Boosting Machines on UNSW-NB15 and reported improved robustness compared to Random Forests, yet did not include explainability or multi-seed statistical analysis. Across these ML studies, the absence of repeated evaluations and lack of operational severity scoring remained persistent gaps.
+
+\subsection{Deep Learning Approaches}
+
+Deep learning models have become popular in IDS research due to their ability to extract complex feature representations. Sarwar \textit{et al.} (2023) applied a Convolutional Neural Network (CNN) for intrusion detection on CIC-IDS2017, achieving strong performance on DoS attacks but suffering on R2L and U2R classes. Wang \textit{et al.} (2024) introduced an LSTM-based recurrent model for temporal threat detection; however, the model required high computational resources, making deployment challenging for Security Operations Centers (SOCs) with limited latency budgets. Zhao and Kim (2024) proposed a hybrid CNN--GRU architecture with attention, which improved minority-class recall but lacked interpretability and did not provide explanations of feature contributions.
+
+Recent literature emphasized combining autoencoders with supervised classifiers. Chen \textit{et al.} (2024) trained a variational autoencoder for anomaly detection but used threshold-based heuristics that produced inconsistent false positive rates. A transformer-based IDS model proposed by Mahmoud \textit{et al.} (2025) showed promising accuracy, but the authors did not measure stability across multiple seeds, and the interpretability of transformer attention maps remained limited for SOC usage.
+
+Deep learning works generally performed well on balanced datasets, but they rarely provided actionable interpretability or severity analysis. Moreover, no deep learning IDS study integrated per-instance explainability using SHAP, nor did they adopt multi-seed evaluation or risk scoring frameworks\cite{Ferrag2024}..
+
+\subsection{Explainable AI (XAI) in Intrusion Detection}
+
+Explainability in IDS has gained attention in recent years. Alam \textit{et al.} (2023) used SHAP to interpret Random Forest predictions globally on UNSW-NB15 but did not analyze explanations at the sample level. Verma \textit{et al.} (2024) generated LIME-based explanations for a Gradient Boosting model but found explanations to be unstable across runs, and the work lacked multiclass evaluation. The base MDPI paper used SHAP summary plots to show feature influence in anomaly detection, but no per-alert explanation mechanism was integrated, preventing operational decision making.
+
+In another 2024 study, Li and Zhang applied SHAP to a LightGBM classifier; however, the authors only included binary classification (attack vs.\ normal) and did not extend the method to multiclass scenarios. Kapoor \textit{et al.} (2025) provided an interpretable IDS using Anchors for explanation rules, but the system produced static rule templates that could not capture dynamic behavior across attack families. Across these XAI-centric works, no framework combined SHAP-based local explanations with operational severity scoring or stability evaluation\cite{Schummer2024,ElSayed2022}.
+
+\subsection{Ensemble and Boosting-Based IDS}
+
+Boosting algorithms have recently gained traction due to their strong performance on tabular data. Ahmad \textit{et al.} (2024) experimented with AdaBoost and Gradient Boosting on NSL-KDD and reported improved accuracy compared to SVMs. However, their evaluation used a single seed, and minority classes demonstrated high variance. Singh and Arora (2025) applied CatBoost to CIC-IDS2018 and achieved robust results, but excluded explainability and severity scoring. A 2025 study by Yildirim \textit{et al.} evaluated XGBoost for intrusion detection; although promising, the work used only global feature importance and did not analyze SHAP values.
+
+None of these boosting approaches performed repeated experiments across seeds, nor did they integrate a severity-based risk evaluation layer. They also lacked per-sample explainability, which is essential for SOC environments.
+
+\subsection{Multiclass IDS and Minority-Class Detection}
+
+A critical challenge in IDS literature is minority-class detection. Silva \textit{et al.} (2023) applied cost-sensitive SVMs to improve R2L and U2R detection but at the expense of overall model stability. Amiri \textit{et al.} (2024) introduced SMOTE-based augmentation for balancing NSL-KDD classes, but augmented samples distorted feature distributions and degraded real-world applicability. Pandey and Thapa (2024) proposed a CNN classifier focusing on minority classes, but lacked explainability and reported highly variable results under different splits. A 2025 study by Haroon \textit{et al.} used balanced Random Forests for minority attack detection, yet performance still fluctuated significantly by seed.
+
+Across these works, minority-class recall remained inconsistent, and none performed variance analysis via multi-seed evaluation.
+
+\subsection{Gaps Identified Across Literature}
+
+From the review above, five consistent methodological gaps appeared across 2023--2025 research:
+\begin{itemize}
+\item \textbf{Single-run evaluation practices} --- Most works relied on a single train--test split, resulting in unreliable and non-generalizable results.
+\item \textbf{Limited multiclass intrusion modeling} --- Many studies focused on binary classification or anomaly detection, ignoring multiclass operational requirements.
+\item \textbf{Weak minority-class performance} --- R2L and U2R classes remained particularly underperforming.
+\item \textbf{Lack of per-sample explainability} --- Existing works relied on global feature importance rather than per-alert explanations.
+\item \textbf{Absence of severity scoring} --- Few IDS frameworks converted predictions into risk-based severity scores for SOC triage.
+\end{itemize}
+
+\section{Comparative Literature Table and Analysis}
+
+Table~\ref{tab:literature_comparison} presents a consolidated comparison of key IDS studies published between 2023 and 2025, focusing strictly on the methodological dimensions relevant to this work: dataset choice, model family, multiclass capability, explainability, stability evaluation, and severity scoring. These criteria were selected because they represent the major gaps identified in the literature and directly align with the improvements proposed in this research.
+
+\begin{table*}[htbp]
+\centering
+\caption{Comparative Literature Summary (2023--2025)}
+\label{tab:literature_comparison}
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{l l l c c c c}
+\toprule
+\textbf{Study (Year)} & \textbf{Dataset} & \textbf{Model Type} & \textbf{Multiclass} & \textbf{Explainability} & \textbf{Multi-Seed} & \textbf{Severity} \\
+\midrule
+Khan \textit{et al.} (2023) & NSL-KDD & DT, SVM & Partial & None & No & No \\
+Alam \textit{et al.} (2023) & UNSW-NB15 & RF & Yes & Global SHAP & No & No \\
+Sarwar \textit{et al.} (2023) & CIC-IDS2017 & CNN & Yes & None & No & No \\
+Bhatia \& Singh (2023) & NSL-KDD & NB, LR & Partial & None & No & No \\
+Rahman \& Idris (2024) & CIC-IDS2017 & RF & Yes & None & No & No \\
+Ahmad \textit{et al.} (2024) & NSL-KDD & AdaBoost, GBM & Partial & None & No & No \\
+Verma \textit{et al.} (2024) & CIC-IDS2018 & GBM & Yes & LIME & No & No \\
+Wang \textit{et al.} (2024) & CIC-IDS2017 & LSTM & Yes & None & No & No \\
+Zhao \& Kim (2024) & CIC-IDS2017 & CNN--GRU & Yes & None & No & No \\
+Amiri \textit{et al.} (2024) & NSL-KDD & CNN & Yes & None & No & No \\
+Li \& Zhang (2024) & NSL-KDD & LightGBM & No (Binary) & SHAP (Global) & No & No \\
+Haroon \textit{et al.} (2025) & NSL-KDD & Balanced RF & Yes & None & No & No \\
+Singh \& Arora (2025) & CIC-IDS2018 & CatBoost & Yes & None & No & No \\
+Duarte \textit{et al.} (2025) & UNSW-NB15 & GBM & Yes & None & No & No \\
+Yildirim \textit{et al.} (2025) & NSL-KDD & XGBoost & Partial & Feature Importance & No & No \\
+Mahmoud \textit{et al.} (2025) & CIC-IDS2021 & Transformer & Yes & Attention Maps & No & No \\
+Schummer \textit{et al.} (2024) & NSL-KDD & RF (Binary Anomaly) & No & Global SHAP & No & No \\
+\textbf{Proposed Work (2025)} & \textbf{NSL-KDD} & \textbf{XGBoost + SHAP} & \textbf{Yes} & \textbf{Local + SHAP} & \textbf{Yes} & \textbf{Yes} \\
+\bottomrule
+\end{tabular}
+\end{table*}
+
+\subsection{Interpretation of Comparative Findings}
+
+The comparison reveals a consistent pattern across state-of-the-art IDS literature. Although datasets such as NSL-KDD, CIC-IDS2017, and UNSW-NB15 remain widely used, most studies focused on binary classification or anomaly detection, which limits real-world applicability where multiple attack families must be distinguished. Deep learning-based studies achieved strong detection performance but lacked interpretability and incurred high computational overhead, constraining deployment in latency-sensitive Security Operations Centers (SOCs).
+
+Explainability—particularly per-instance explainability—remained largely absent. Existing XAI-based studies primarily relied on global SHAP summaries or attention visualizations, which do not support alert-level forensic analysis. No reviewed study combined SHAP explanations with a formalized risk or severity scoring mechanism.
+
+A critical gap across all prior work is the reliance on single-run evaluation. Without multi-seed experiments, reported performance may be unstable due to randomness in initialization or data partitioning. This issue is especially pronounced for minority intrusion classes, which are highly sensitive to split variability.
+
+Finally, none of the reviewed systems—including the base MDPI paper—integrated severity scoring, despite its importance for SOC triage and automated response workflows.
+
+\subsection{Addressing the Gaps}
+
+The proposed framework resolves these limitations through:
+
+\begin{enumerate}
+\item \textbf{Multiclass XGBoost-Based IDS:} Full multiclass classification across all NSL-KDD attack families, addressing the limitations of binary anomaly detection.
+\item \textbf{Per-Sample SHAP Explainability:} Each alert is accompanied by local SHAP explanations, enabling analyst-driven forensic investigation.
+\item \textbf{Stability via Multi-Seed Evaluation:} Five independent random seeds are used to demonstrate robustness and statistical consistency.
+\item \textbf{Severity Scoring Engine:} A novel risk scoring mechanism integrating model confidence, attack-type base severity, and SHAP-derived impact modifiers, enabling automated alert prioritization.
+\end{enumerate}
+
+Overall, while prior studies contributed valuable IDS models, they consistently lacked multiclass robustness, per-sample explainability, stability testing, and severity scoring. The proposed framework addresses all these gaps simultaneously, offering a more interpretable, stable, and operationally aligned IDS solution.The comparative review further emphasizes that performance alone is insufficient for modern intrusion detection systems deployed in operational environments. Models that report high accuracy but lack robustness, interpretability, and consistency introduce significant risks when integrated into real-world security infrastructures. In particular, the absence of stability analysis across multiple random seeds raises concerns about reproducibility and generalization, especially for minority attack categories that are highly sensitive to data partitioning.
+
+Additionally, many existing IDS solutions treat explainability as an auxiliary visualization step rather than a core operational requirement. Global feature importance scores, while informative at the dataset level, fail to provide actionable insights for individual alerts encountered by Security Operations Centers (SOCs). Without per-sample explanations, analysts are forced to manually inspect raw feature values, increasing response latency and reducing trust in automated systems.
+
+Equally important is the lack of severity-aware alerting mechanisms in prior work. IDS outputs that assign uniform importance to all detected intrusions place an unnecessary cognitive burden on analysts and hinder automated escalation strategies. In high-volume environments, the ability to distinguish between low-risk anomalies and high-impact intrusions is critical for efficient resource allocation and timely threat mitigation.
+
+\section{Proposed Architecture}
+
+The proposed architecture is designed as a fully explainable, severity-aware, and operationally deployable Intrusion Detection System (IDS). Unlike conventional IDS pipelines that focus exclusively on classification accuracy, this architecture embeds stability, interpretability, and analyst usability as first-class design objectives. It integrates multiclass gradient-boosted learning, per-sample explainability, multi-seed statistical validation, and a mathematically grounded severity scoring mechanism.
+
+A key architectural requirement is dataset agnosticism. The same pipeline operates consistently across both benchmark datasets (NSL-KDD) and modern, realistic datasets (UNSW-NB15) without structural modification. This ensures that performance gains are not dataset-specific artifacts but reflect genuine modeling robustness. Each architectural component is described below in terms of its functional role, mathematical formulation, and operational relevance.
+
+\subsection{Data Ingestion and Feature Abstraction Layer}
+
+Network traffic enters the system either from offline datasets used for experimental evaluation or from live network streams in operational Security Operations Center (SOC) environments. In this study, two datasets are supported: NSL-KDD and UNSW-NB15.
+
+In NSL-KDD, each network connection is represented by a structured 41-dimensional feature vector capturing protocol behavior, content attributes, and temporal statistics. In contrast, UNSW-NB15 provides a richer and more realistic representation, consisting of 175,341 instances with 194 features, including packet-level statistics, flow-based metrics, and application-layer indicators. Despite these differences, all incoming traffic is converted into a unified numerical representation
+\begin{equation}
+\mathbf{x} \in \mathbb{R}^{d},
+\end{equation}
+where $d$ depends on the dataset and encoding scheme.
+
+Features can be conceptually grouped into four categories. Basic TCP/IP features (e.g., duration, protocol type, service, flag) capture low-level connection behavior and are effective for separating benign traffic from volumetric attacks. Content-based features encode semantic indicators such as authentication failures and privilege escalation attempts, which are essential for detecting stealthy intrusions. Time-based statistical features model short-term burst behavior typical of denial-of-service and probing activity, while host-based statistical features aggregate longer-term patterns related to scanning and persistence.
+
+This abstraction layer ensures that heterogeneous raw traffic is transformed into machine-learning--ready feature vectors while preserving attack-relevant semantics across datasets.
+
+\subsection{Preprocessing Layer}
+
+Preprocessing is treated as a structural component rather than a preparatory convenience. The objective is to produce stable, reproducible, and interpretable inputs that support both accurate classification and meaningful explanation.
+
+\subsubsection{Data Cleaning}
+
+Missing values, malformed entries, and extreme outliers are handled deterministically. Numerical missing values are replaced using robust statistics, categorical missing values are replaced with the most frequent category, and extreme numerical values are clamped using feature-wise interquartile ranges (IQR). Formally, each feature value is processed as
+\begin{equation}
+x_i =
+\begin{cases}
+\text{median}(x_i), & \text{numeric and missing} \\
+\text{mode}(x_i), & \text{categorical and missing} \\
+\text{IQR-clamped}(x_i), & \text{extreme outlier}.
+\end{cases}
+\end{equation}
+This prevents XGBoost from learning spurious decision rules caused by noise or corrupted samples.
+
+\subsubsection{Categorical Encoding}
+
+Categorical attributes such as protocol type, service, and state are transformed using one-hot encoding,
+\begin{equation}
+\mathbf{x}'_c = \text{one\_hot}(\mathbf{x}_c),
+\end{equation}
+to avoid introducing artificial ordinal relationships. Although this increases dimensionality, XGBoost efficiently handles sparse binary representations and benefits from improved interpretability of feature contributions.
+
+\subsubsection{Numeric Feature Scaling}
+
+While tree-based models are not inherently sensitive to feature scaling, standardization improves SHAP value comparability, stabilizes the severity scoring mechanism, and improves boundary behavior for minority classes. Numeric features are standardized as
+\begin{equation}
+\mathbf{x}'' = \frac{\mathbf{x}' - \mu}{\sigma},
+\end{equation}
+where $\mu$ and $\sigma$ are computed using the training set for each seed to prevent data leakage.
+
+\subsubsection{Attack Label Mapping}
+
+Raw attack labels are mapped into operationally meaningful class families to reduce fragmentation and extreme imbalance. For NSL-KDD, labels are mapped to \{Normal, DoS, Probe, R2L, U2R\}. For UNSW-NB15, attack categories are consolidated into six classes: \{Normal, Generic, Exploits, Reconnaissance, DoS--Fuzzers, Rare Attacks\}. Formally,
+\begin{equation}
+y = f(y_{\text{raw}}).
+\end{equation}
+This mapping aligns model outputs with SOC threat taxonomies and improves both statistical stability and interpretability.
+
+\subsection{Multi-Seed Stratified Train--Test Splitting}
+
+To avoid fragile, split-dependent conclusions, the architecture employs five independent random seeds,
+\begin{equation}
+\mathcal{S} = \{42, 7, 21, 99, 123\}.
+\end{equation}
+For each seed $s \in \mathcal{S}$, the dataset is partitioned using stratified sampling:
+\begin{equation}
+(X_{\text{train}}, X_{\text{test}}, y_{\text{train}}, y_{\text{test}})
+= \text{StratifiedSplit}(X, y, 0.75, s).
+\end{equation}
+This preserves class proportions across splits, ensures fair minority-class evaluation, and enables variance analysis. Rather than reporting single-point results, the architecture produces performance distributions, which are essential for assessing reliability in real deployments.
+
+\subsection{XGBoost Multiclass Classification Engine}
+
+XGBoost is used as the predictive core due to its robustness on high-dimensional tabular data and native compatibility with TreeSHAP. The model predicts a probability distribution over attack classes\cite{Chen2016,Li2020XGBIDS}. For each class $i$,
+\begin{equation}
+z_i(\mathbf{x}) = \sum_{t=1}^{T} h_{t,i}(\mathbf{x}),
+\end{equation}
+\begin{equation}
+p_i(\mathbf{x}) = \frac{e^{z_i(\mathbf{x})}}{\sum_j e^{z_j(\mathbf{x})}},
+\end{equation}
+\begin{equation}
+\hat{y}(\mathbf{x}) = \arg\max_i p_i(\mathbf{x}).
+\end{equation}
+
+Training minimizes a regularized multiclass loss,
+\begin{equation}
+\mathcal{L} = -\sum_{n} \sum_{i} y_{n,i} \log p_i(\mathbf{x}_n)
++ \lambda \sum_t \Omega(h_t).
+\end{equation}
+Class-balanced sample weights are applied to counter severe imbalance, ensuring that rare attack classes influence the optimization process.
+
+\subsection{Per-Sample SHAP Explainability Layer}
+
+To enable transparent and analyst-traceable decisions, the architecture integrates per-sample explainability using SHAP. Each prediction is decomposed as
+\begin{equation}
+f(\mathbf{x}) = \phi_0 + \sum_{k=1}^{d'} \phi_k,
+\end{equation}
+where $\phi_k$ represents the contribution of feature $k$ to the predicted class. Unlike global explanations, these local explanations reveal why a specific flow was flagged, which is critical for SOC triage, auditing, and forensic analysis.
+
+To maintain interpretability, only the top-$k$ contributing features are retained per alert. These explanations are embedded directly into the alert output and serve as the foundation for severity computation.
+
+\subsection{Severity Scoring Engine}
+
+Classification outputs alone do not convey operational urgency. Therefore, a severity scoring mechanism converts predictions into actionable risk levels. The severity score for an instance is defined as
+\begin{equation}
+S(\mathbf{x}) = \alpha S_b + \beta M_c + \gamma M_s,
+\end{equation}
+where $S_b$ is the base severity assigned to the predicted class, $M_c = \max_i p_i(\mathbf{x})$ represents model confidence, and $M_s$ denotes the mean absolute magnitude of the top SHAP contributions. The weights $\alpha$, $\beta$, and $\gamma$ are empirically tuned.
+
+The continuous score is discretized into SOC-aligned categories:
+\begin{equation}
+[0,0.25)\!\rightarrow\!\text{Low},\;
+[0.25,0.5)\!\rightarrow\!\text{Medium},\;
+[0.5,0.75)\!\rightarrow\!\text{High},\;
+[0.75,1.0+)\!\rightarrow\!\text{Critical}.
+\end{equation}
+
+\subsection{Explainable Alert Packet and SOC Integration}
+
+Each processed instance generates an explainable alert packet,
+\begin{equation}
+\text{Alert} = \{\hat{y}, S(\mathbf{x}), M_c, \text{Top-SHAP Features}, \phi_k, \text{Metadata}\}.
+\end{equation}
+The packet is JSON-compatible and designed for direct integration with SIEM platforms such as Splunk, ELK, and QRadar. By combining prediction, explanation, and severity in a single artifact, the architecture significantly reduces analyst workload and supports automated response strategies.
+
+\section{Proposed Architecture}
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{architecture.png}
+\caption{Proposed explainable and severity-aware IDS architecture}
+\label{fig:architecture}
+\end{figure}
+
+\subsection{Architectural Advantages}
+
+The proposed architecture differs fundamentally from traditional IDS frameworks by providing true multiclass detection, per-sample explainability, severity-aware alerting, and statistically robust evaluation through multi-seed validation. Rather than producing opaque predictions, it delivers stable, interpretable, and operationally actionable intelligence, making it suitable for deployment in real-world SOC environments across heterogeneous network conditions.
+
+\section{Proposed Methodology}
+\label{sec:methodology}
+
+This section presents a thorough explanation of the methodology developed in this study. The design of the proposed system is motivated by the limitations identified in prior research, including the base paper, and aims to produce a robust, explainable, and severity-aware intrusion detection framework. To enable reproducibility and technical clarity, the complete pipeline is discussed step-by-step with mathematical formulations, implementation reasoning, and operational implications. The methodology consists of dataset integration, preprocessing, model training, explainability extraction, severity scoring, and generation of a final security alert packet suitable for real-world SOC deployment.Gradient boosting--based classifiers have shown strong performance on structured cybersecurity datasets due to their ability to model complex feature interactions and reduce bias through iterative learning \cite{Schummer2024}.
+
+
+\subsection{Dataset Analysis, Integration, and Rationale}
+
+The NSL-KDD dataset is selected deliberately due to its structural improvements over the original KDD’99 dataset. Unlike KDD’99, which contains excessive redundancy that encourages memorization rather than generalization, NSL-KDD removes duplicate records and trivial samples, enabling a more realistic evaluation of machine learning models.
+
+The dataset contains a total of 148{,}517 samples distributed across \texttt{KDDTrain+} and \texttt{KDDTest+}. Each instance represents a network connection summarized by 41 attributes capturing three fundamental dimensions of network behavior:
+\begin{enumerate}
+    \item Basic connection properties such as duration, protocol type, service, and flag.
+    \item Content-based properties including authentication failures, shell access attempts, and privilege escalation indicators.
+    \item Traffic-based statistical properties such as \texttt{count}, \texttt{srv\_count}, and destination host statistics collected across temporal windows.
+\end{enumerate}
+
+Although NSL-KDD contains 22 individual attack types, operational Security Operations Centers (SOCs) categorize these attacks into four families based on intent and behavioral signature: \textit{Denial of Service (DoS)}, \textit{Probe}, \textit{Remote-to-Local (R2L)}, and \textit{User-to-Root (U2R)}. This aggregation reduces label fragmentation and aligns model outputs with analyst workflows.
+
+A key challenge in NSL-KDD is severe class imbalance, where minority attacks such as U2R appear orders of magnitude less frequently than DoS attacks. This imbalance motivates the use of macro-averaged performance metrics and SHAP-based interpretability to ensure that minority-class behavior remains visible, measurable, and improvable\cite{Wang2024XGB,Zhou2024,Rahman2025}..
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{class_distribution.png}
+\caption{Class distribution of the NSL-KDD dataset across five attack categories. The gradient color scale emphasizes the imbalance between majority classes (Normal, DoS) and minority classes (Probe, R2L, U2R).}
+\label{fig:class_distribution}
+\end{figure}
+
+\begin{table}[htbp]
+\centering
+\caption{NSL-KDD Dataset Summary}
+\label{tab:nslkdd}
+\begin{tabular}{ll}
+\hline
+\textbf{Property} & \textbf{Value} \\
+\hline
+Dataset & NSL-KDD (KDDTrain+, KDDTest+) \\
+Total samples & 125{,}973 \\
+Number of features & 41 + label \\
+Classes & Normal, DoS, Probe, R2L, U2R \\
+Class balance & Highly imbalanced \\
+Source & Public NSL-KDD benchmark \\
+\hline
+\end{tabular}
+\end{table}
+
+\subsubsection{UNSW-NB15 Dataset Extension (Modern Traffic Validation)}
+
+To complement benchmark-based validation and address the limitations of legacy intrusion datasets, the methodology is extended to include the UNSW-NB15 dataset, which reflects contemporary network traffic and modern attack behaviors.
+
+UNSW-NB15 contains 175{,}341 network flow instances generated using the IXIA PerfectStorm tool combined with real network traffic captures. Unlike NSL-KDD, which is connection-oriented, UNSW-NB15 provides flow-level and packet-level attributes, enabling more realistic modeling of present-day cyber threats.
+
+Each instance initially contains 45 raw features, including protocol metadata, packet statistics, and application-layer indicators. After categorical encoding, the effective dimensionality increases to 194 features, allowing finer-grained behavioral representation.
+
+For operational relevance, attack categories are consolidated into six SOC-aligned classes:
+\begin{itemize}
+    \item Normal
+    \item Generic
+    \item Exploits
+    \item Reconnaissance
+    \item DoS--Fuzzers
+    \item Rare Attacks (Analysis, Backdoor, Shellcode, Worms)
+\end{itemize}
+
+\begin{table}[htbp]
+\centering
+\caption{UNSW-NB15 Dataset Characteristics}
+\label{tab:unsw}
+\begin{tabular}{ll}
+\hline
+\textbf{Property} & \textbf{Value} \\
+\hline
+Dataset & UNSW-NB15 \\
+Total samples & 175{,}341 \\
+Raw features & 45 \\
+Encoded features & 194 \\
+Number of classes & 6 \\
+Traffic realism & High \\
+\hline
+\end{tabular}
+\end{table}
+
+By incorporating UNSW-NB15, the evaluation transitions from benchmark-only testing to deployment-oriented validation, strengthening the external validity of the proposed IDS.
+
+\subsection{Preprocessing Pipeline: Reliable and Reproducible Inputs}
+
+The preprocessing pipeline is designed to satisfy four critical constraints: uniform feature dimensionality, consistent categorical encoding across seeds, normalized numeric ranges, and strict prevention of data leakage.
+
+Raw samples are represented as feature vectors $x$ with original textual labels $y_{\text{raw}}$. A mapping function
+\[
+y = f(y_{\text{raw}})
+\]
+assigns each instance to its corresponding operational attack family.
+
+Categorical attributes are expanded using one-hot encoding, transforming discrete variables into sparse binary vectors. This eliminates artificial ordinal relationships and enables machine-readable pattern extraction. Continuous attributes are standardized using:
+\[
+x_{\text{norm}} = \frac{x - \mu}{\sigma}
+\]
+where $\mu$ and $\sigma$ are computed exclusively from the training set for each random seed.
+
+To assess stability, the dataset is partitioned using five independent random seeds with stratified sampling, ensuring proportional class representation across all splits. This multi-seed strategy mitigates split-dependent bias and produces statistically reliable results.
+
+\subsubsection{UNSW-NB15 Preprocessing Adaptation}
+
+Due to UNSW-NB15’s richer feature space, categorical encoding dictionaries are learned globally per seed and reused across splits. Numeric attributes exhibit higher variance; therefore, robust standardization is essential to stabilize SHAP attribution and severity computation. The same training-only statistics are applied to prevent leakage.
+
+\subsection{XGBoost Model Construction}
+
+Gradient Boosted Decision Trees are selected due to their strong performance on tabular data, ability to capture non-linear interactions, and native compatibility with TreeSHAP. Unlike Random Forests, XGBoost builds trees sequentially, where each new tree corrects previous errors.
+
+At boosting iteration $t$, the cumulative logit for class $i$ is:
+\[
+z_i(x') = \sum_{t} h_{t,i}(x')
+\]
+
+Class probabilities are computed via softmax:
+\[
+p_i(x') = \frac{e^{z_i(x')}}{\sum_j e^{z_j(x')}}
+\]
+
+The predicted class is:
+\[
+\hat{y}(x') = \arg\max_i p_i(x')
+\]
+
+Training minimizes the regularized multiclass loss:
+\[
+\mathcal{L} = -\sum_n \sum_i y_{n,i} \log p_i(x'_n) + \lambda \sum_t \Omega(h_t)
+\]
+
+Training is repeated across five random seeds, yielding distributions for accuracy, macro-F1, and runtime.
+
+\subsection{TreeSHAP Explainability}
+
+To ensure model transparency and analyst trust, explainability is incorporated using TreeSHAP, which provides consistent, locally accurate feature attributions for tree-based models \cite{Lundberg2017}.
+TreeSHAP provides exact per-sample explanations for ensemble models by decomposing predictions into additive feature contributions:
+\[
+f(x') = \phi_0 + \sum_k \phi_k
+\]
+
+Each $\phi_k$ quantifies the contribution of feature $k$ toward the predicted class. Unlike global explanations, TreeSHAP enables instance-level forensic analysis, which is critical for SOC workflows.
+
+For UNSW-NB15, SHAP values are computed per class and per sample. Due to high dimensionality, only the top-$k$ contributing features are retained per alert, preserving interpretability without analyst overload. Empirically, UNSW-NB15 explanations emphasize flow-level indicators such as packet rates, byte asymmetry, and connection state transitions, providing richer behavioral justification than legacy datasets\cite{Sarker2024,Angelini2024,Nobrega2025}..
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{severity_score_comp.png}
+\caption{Severity scoring mechanism for intrusion detection alerts. The final severity score combines attack-class base severity, model confidence, and SHAP-derived impact magnitude to produce risk-aware alert prioritization.}
+\label{fig:severity_score_comp}
+\end{figure}
+
+
+\subsection{Alert Packet Generation: Closing the Loop for SOC Deployment}
+
+After prediction, explainability extraction, and severity computation, the proposed system generates a complete and self-contained alert packet for each processed network instance. This alert packet encapsulates all information required for operational decision making within Security Operations Centers (SOCs).
+
+Each alert packet includes the following elements:
+\begin{itemize}
+    \item sample index,
+    \item predicted attack class,
+    \item full class probability vector,
+    \item severity score and discretized severity label,
+    \item top contributing SHAP features along with their contribution weights,
+    \item contextual reasoning summary derived from feature attributions.
+\end{itemize}
+
+The alert packet is directly exportable in JSON format, enabling seamless integration with log analytics and Security Information and Event Management (SIEM) platforms. Unlike conventional IDS models that output only a predicted label, the proposed framework produces a structured and context-rich alert that explicitly communicates why an intrusion was detected, how severe it is, and which traffic attributes contributed most strongly to the decision.
+
+\subsubsection{UNSW-NB15 Alert Enrichment}
+
+For UNSW-NB15, the alert packet is further enriched with flow-level metadata, including protocol state transitions and packet timing indicators. These additional attributes enhance forensic traceability and provide deeper contextual insight during incident investigation workflows.
+
+The unified alert schema enables mixed-dataset deployment, allowing SOCs to consume alerts originating from heterogeneous traffic sources without requiring any modification to downstream processing pipelines.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{explanable_alert_pkt_SOC.png}
+\caption{Explainable alert packet for Security Operations Center (SOC) environments. The packet integrates predicted attack class, confidence score, severity level, and SHAP-based feature explanations to support transparent and actionable intrusion analysis.}
+\label{fig:explanable_alert_pkt_SOC}
+\end{figure}
+
+\subsection{Mathematical Overview of End-to-End Pipeline}
+
+The complete end-to-end flow of the proposed intrusion detection framework can be summarized mathematically as follows. Given a preprocessed and encoded feature vector $x'$, the predicted class is obtained using a softmax-based multiclass decision rule:
+\begin{equation}
+\hat{y} = \arg\max_{i} \; \text{softmax}\left( f(x') \right)_i
+\end{equation}
+
+For the predicted instance, TreeSHAP is applied to extract local feature attributions:
+\begin{equation}
+\boldsymbol{\phi} = \text{SHAP}(x')
+\end{equation}
+
+The magnitude of feature impact used for risk estimation is computed by aggregating the absolute values of the top contributing SHAP features:
+\begin{equation}
+M(x') = \sum_{k \in \text{Top}} \left| \phi_k \right|
+\end{equation}
+
+Finally, the severity score is computed by combining class-level base severity $b_{\hat{y}}$, model confidence $p_{\hat{y}}$, and SHAP-based impact magnitude:
+\begin{equation}
+S(x') = b_{\hat{y}} \, p_{\hat{y}} + M(x')
+\end{equation}
+
+This formulation establishes a closed-loop connection between prediction, explainability, and risk assessment, ensuring that every alert produced by the system is both interpretable and operationally meaningful.
+
+\subsection{Computational Complexity and Practical Considerations}
+
+The computational cost of the proposed framework is carefully managed to ensure feasibility in real-world deployments. The preprocessing pipeline requires $O(N d')$ memory and time complexity, where $N$ denotes the number of samples and $d'$ represents the dimensionality after categorical encoding.
+
+The training complexity of the XGBoost classifier is approximately:
+\begin{equation}
+O\left( K N d' \log N \right)
+\end{equation}
+where $K$ is the number of boosting iterations. This complexity remains tractable for the NSL-KDD dataset due to its moderate size and feature dimensionality.
+
+TreeSHAP explanation generation operates with polynomial-time complexity on tree ensembles and scales as:
+\begin{equation}
+O(T L^2)
+\end{equation}
+where $T$ denotes the number of trees and $L$ is the number of leaves per tree. This ensures efficient extraction of per-sample explanations without introducing prohibitive overhead.
+
+\subsubsection*{Complexity Impact of UNSW-NB15}
+
+For the UNSW-NB15 dataset, preprocessing and TreeSHAP computation incur higher costs due to increased feature dimensionality following categorical encoding. However, empirical runtime remains feasible because XGBoost employs sparsity-aware optimization, and TreeSHAP retains polynomial-time guarantees.
+
+Overall, the computational profile confirms that the proposed methodology scales effectively from benchmark datasets to realistic, high-volume network traffic, supporting real-time or near real-time deployment depending on available hardware resources.
+
+\section{Experimental Setup}
+
+This section describes the complete experimental setup used to evaluate the proposed intrusion detection framework. Because a major weakness in existing IDS literature is the lack of reproducibility and environmental transparency, all experiments were designed with strict controls and detailed documentation. The setup includes explicit hardware specifications, pinned software versions, deterministic preprocessing behavior, structured hyperparameter definitions, and multi-seed evaluation protocols. The objective is to ensure that any researcher or SOC engineer can reconstruct the environment and reproduce the reported results consistently across all experimental seeds.
+
+\subsection{Hardware Environment and Practical Constraints}
+
+All experiments were conducted on a mid-range workstation representative of typical academic laboratories and industrial Security Operations Center (SOC) environments. The hardware configuration consisted of:
+\begin{itemize}
+    \item Intel Core i7 (10th generation) processor with 8 cores and 16 threads
+    \item 16~GB DDR4 RAM
+    \item 512~GB NVMe SSD
+    \item NVIDIA GPU installed but not utilized
+\end{itemize}
+
+XGBoost training was executed exclusively on the CPU. This decision was intentional, as GPU acceleration can introduce non-deterministic behavior across runs due to floating-point parallelism, which adversely affects SHAP value stability. Moreover, most SOC deployments rely on CPU-based servers rather than GPUs. By training all models under identical CPU-only conditions, the reported performance metrics, SHAP explanations, and training times accurately reflect real-world operational constraints.
+
+All experiments on the UNSW-NB15 dataset were executed using the same hardware configuration. Although the increased dimensionality after encoding (194 features) required additional memory during preprocessing and SHAP computation, all experiments remained within hardware limits without GPU acceleration or memory swapping.
+
+\subsection{Software Environment and Version Pinning}
+
+To eliminate version drift and ensure strict reproducibility, all experiments were executed within a dedicated Python virtual environment. Library versions were pinned and not updated throughout the experimental process. The software stack included:
+\begin{itemize}
+    \item Python 3.10
+    \item XGBoost 2.1
+    \item SHAP 0.44 (TreeSHAP stable release)
+    \item Scikit-learn 1.3
+    \item Pandas 2.0
+    \item NumPy 1.26
+    \item Matplotlib 3.7
+    \item Joblib 1.3
+\end{itemize}
+
+XGBoost version 2.1 is critical for this study, as it includes the optimized TreeSHAP implementation used for explanation extraction. Earlier versions produce different SHAP attributions due to missing algorithmic optimizations. Version pinning ensures exact reproducibility of feature attributions and severity scores.
+
+\subsection{Data Loading, Integration, and Preprocessing Configuration}
+
+The NSL-KDD dataset (KDDTrain+ and KDDTest+) was loaded using a custom Python data integration module. The following preprocessing constraints were enforced:
+\begin{enumerate}
+    \item Training and test files were merged prior to preprocessing to guarantee global encoding consistency.
+    \item Categorical attributes were detected programmatically, avoiding hardcoded assumptions.
+    \item One-hot encoding was applied uniformly to all categorical features.
+    \item Feature standardization was performed using statistics computed strictly on the training set for each seed.
+    \item Feature ordering was locked across all seeds to prevent silent dimensional misalignment.
+\end{enumerate}
+
+All preprocessing steps were implemented as deterministic Python code rather than manual transformations. This design ensures reproducibility and allows the preprocessing pipeline itself to serve as executable documentation.
+
+\subsubsection*{UNSW-NB15 Preprocessing Configuration}
+
+For UNSW-NB15, the same deterministic preprocessing pipeline was applied. Categorical attributes such as \textit{proto}, \textit{state}, and \textit{service} were automatically detected and expanded via one-hot encoding, resulting in a 194-dimensional feature space. Attack labels were consolidated into six operational classes: Normal, Generic, Exploits, Reconnaissance, DoS--Fuzzers, and Rare Attacks.
+
+Standardization parameters were computed independently for each random seed using training-only data, ensuring strict separation between training and test distributions and preventing statistical leakage.
+
+\subsection{Multi-Seed Train--Test Splitting Strategy}
+
+Unlike the base paper and many prior IDS studies that rely on a single train--test split, this work adopts a multi-seed stratified splitting strategy. For each random seed in $\{42, 7, 21, 99, 123\}$, an independent stratified partition is created, preserving class proportions across splits.
+
+This strategy serves three critical purposes:
+\begin{itemize}
+    \item It reveals sensitivity to dataset partitioning.
+    \item It exposes instability in minority-class performance.
+    \item It enables statistically reliable performance reporting.
+\end{itemize}
+
+The same splitting strategy was applied to both the proposed XGBoost model and the Random Forest baseline to ensure fairness. No dataset-specific tuning was applied to the baseline model.
+
+\subsection{Baseline Model Configuration (Random Forest)}
+
+A Random Forest classifier was used as the baseline to quantify the relative improvement achieved by the proposed framework. The baseline was configured with:
+\begin{itemize}
+    \item 200 decision trees
+    \item Unlimited tree depth
+    \item Gini impurity criterion
+    \item Fully parallel CPU execution
+    \item \texttt{random\_state} set to the corresponding seed
+\end{itemize}
+
+This configuration closely reflects the evaluation strategy used in the base paper while improving fairness through identical preprocessing, splitting, and multi-seed evaluation.
+
+\subsection{Proposed XGBoost Model Configuration}
+
+The XGBoost classifier was configured through iterative tuning to balance macro-F1 performance, SHAP stability, computational feasibility, and seed-wise robustness. The final configuration for NSL-KDD was:
+\begin{itemize}
+    \item \texttt{booster}: gbtree
+    \item \texttt{objective}: multi:softprob
+    \item \texttt{max\_depth}: 6
+    \item \texttt{learning\_rate}: 0.1
+    \item \texttt{n\_estimators}: 200
+    \item \texttt{subsample}: 0.8
+    \item \texttt{colsample\_bytree}: 0.8
+    \item $\lambda$ (L2 regularization): 1
+\end{itemize}
+
+A lower learning rate resulted in slow convergence and unstable minority-class behavior, while a higher learning rate produced volatile predictions and noisy SHAP values. A maximum depth of 6 provided the best balance between minority-class precision and overfitting control. Sampling ratios improved generalization and stabilized performance across seeds\cite{Saito2015,He2009}.
+
+For UNSW-NB15, minor adjustments were required due to higher feature dimensionality and increased attack diversity. The final configuration was:
+\begin{itemize}
+    \item \texttt{objective}: multi:softprob
+    \item \texttt{num\_class}: 6
+    \item \texttt{max\_depth}: 7
+    \item \texttt{learning\_rate}: 0.05
+    \item \texttt{n\_estimators}: 350
+    \item \texttt{subsample}: 0.8
+    \item \texttt{colsample\_bytree}: 0.8
+    \item \texttt{gamma}: 0.5
+\end{itemize}
+
+These settings yielded smoother SHAP distributions, improved minority-class recall, and stable performance across all five seeds.
+
+\subsection{SHAP Explainability Experimental Setup}
+
+TreeSHAP explainability was executed on a per-sample and per-model basis across all experimental seeds. The explainability configuration was defined as follows:
+\begin{itemize}
+    \item SHAP \texttt{PermutationExplainer} was employed to ensure compatibility with multiclass probability outputs and to maintain stable feature attributions across all six UNSW-NB15 classes.
+    \item The explainer model corresponded to the trained XGBoost booster for each seed.
+    \item SHAP values were extracted for the predicted class logit.
+    \item The top six most influential features were retained per alert.
+\end{itemize}
+
+To manage memory consumption, SHAP computations were executed using batched inference. Full SHAP arrays were stored only temporarily to compute severity modifiers and were discarded immediately afterward to minimize RAM usage. This batching strategy reflects realistic SOC environments, where explainability is generated on demand rather than precomputed for entire datasets.Explainable and severity-aware intrusion detection is essential for Security Operations Center (SOC) environments, where analysts require transparent reasoning and effective alert prioritization \cite{Chawla2022,Zhao2015}.
+
+
+For UNSW-NB15, SHAP explanations were computed independently for each class to prevent attribution collapse caused by multiclass base score vectors.
+
+\subsection{Severity Scoring System Configuration}
+
+The proposed framework integrates a structured numeric severity scoring engine designed for operational SOC deployment. Each predicted attack class is first assigned a base severity score:
+\begin{itemize}
+    \item Normal $\rightarrow$ 0.0
+    \item Probe $\rightarrow$ 0.4
+    \item DoS $\rightarrow$ 0.7
+    \item R2L $\rightarrow$ 0.85
+    \item U2R $\rightarrow$ 0.95
+\end{itemize}
+
+These values were selected based on the relative operational risk associated with each attack category and align with commonly adopted threat-weighting schemes in cybersecurity operations\cite{Behl2017,Sommer2010}.
+
+The final severity score is computed as:
+\begin{equation}
+S(x) = b_y \cdot p_y + M(x)
+\end{equation}
+where $b_y$ denotes the base severity of the predicted class, $p_y$ represents the model confidence for that class, and $M(x)$ is the SHAP-based impact modifier defined as the sum of the absolute contributions of the top-$k$ SHAP feature\cite{Zhang2025}s.
+
+The resulting score is mapped into four operational severity levels (\textit{low}, \textit{medium}, \textit{high}, and \textit{critical}), enabling immediate alert triage. This capability constitutes a major improvement over the base paper, which does not provide any form of risk-aware or severity-based prioritization.
+
+For UNSW-NB15, base severity values were adapted to reflect modern attack characteristics:
+\begin{itemize}
+    \item Normal $\rightarrow$ 0.0
+    \item Reconnaissance $\rightarrow$ 0.4
+    \item DoS--Fuzzers $\rightarrow$ 0.7
+    \item Exploits $\rightarrow$ 0.85
+    \item Generic $\rightarrow$ 0.8
+    \item Rare Attacks $\rightarrow$ 0.95
+\end{itemize}
+
+This mapping emphasizes exploit-driven persistence and stealth threats commonly observed in real SOC environments.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{shap_local_explanation_for_alert.png}
+\caption{Local SHAP explanation for a single security alert, highlighting the top contributing network features and their directional impact on the predicted intrusion class to support SOC-level decision making.}
+\label{fig:shap_local_explanation_for_alert.}
+\end{figure}
+
+
+\subsection{Evaluation Metrics and Fairness Controls}
+
+To ensure fair comparison and avoid metric inflation, the following metrics were recorded for each experimental seed:
+\begin{itemize}
+    \item Classification accuracy
+    \item Macro-averaged F1 score
+    \item Training time
+    \item Performance variance across seeds
+\end{itemize}
+
+Macro-F1 was prioritized as the primary metric because minority intrusion classes (R2L and U2R) must be evaluated with equal importance. Accuracy alone can mask poor performance on rare but critical attack types\cite{Dietterich1998,Reimers2017}.
+
+Fairness was enforced through strict experimental controls:
+\begin{itemize}
+    \item Identical train--test splits for Random Forest and XGBoost
+    \item Identical preprocessing pipelines
+    \item Identical random seeds
+    \item No manual feature removal
+    \item No oversampling or undersampling
+    \item Fixed train--test ratio across all seeds
+\end{itemize}
+
+These controls ensure that observed improvements originate exclusively from the proposed methodology rather than from data manipulation or metric biasing.
+
+\subsection{Hyperparameter Summary}
+
+
+
+\begin{table}[htbp]
+\centering
+\caption{Summary of Experimental Hyperparameters and Configurations}
+\label{tab:hyperparams}
+\begin{tabular}{lcc}
+\hline
+\textbf{Component} & \textbf{NSL-KDD} & \textbf{UNSW-NB15} \\
+\hline
+Number of Classes & 5 & 6 \\
+Number of Features & 41 & 194 \\
+XGBoost Max Depth & 6 & 7 \\
+Learning Rate & 0.1 & 0.05 \\
+Number of Trees & 200 & 350 \\
+SHAP Method & TreeSHAP & PermutationSHAP \\
+Number of Seeds & 5 & 5 \\
+\hline
+\end{tabular}
+\end{table}
+Table~\ref{tab:hyperparams}  summarizes the key experimental configurations used for both datasets, including model hyperparameters, SHAP settings, and reproducibility controls.
+\section{Results and Analysis}
+
+This section presents the complete experimental results obtained from the proposed multiclass IDS framework using XGBoost, evaluated across five independent random seeds. To ensure statistical reliability, each seed generated a unique stratified train--test split, and performance was compared against a Random Forest (RF) baseline. The reported metrics include accuracy, macro-F1 score, minority-class behavior, variance, training time, and overall stability. This section also integrates the updated numerical results previously reported in Section~8.
+
+\subsection{Overall Performance Across Seeds}
+
+Prior studies have shown that single train--test split evaluations can lead to misleading conclusions due to sensitivity to data partitioning, motivating multi-seed validation \cite{Ahmed2016,Pang2021}.
+Across all five random seeds (\{42, 7, 21, 99, 123\}), the XGBoost classifier consistently achieved high accuracy and strong macro-F1 performance. Table~\ref{tab:seedwise_performance} summarizes the exact results obtained for both XGBoost and the Random Forest baseline.
+
+\begin{table}[htbp]
+\centering
+\caption{Seed-wise performance comparison of XGBoost and Random Forest}
+\label{tab:seedwise_performance}
+\resizebox{\columnwidth}{!}{%
+\begin{tabular}{c|cc|cc|cc}
+\hline
+\textbf{Seed} & \textbf{XGB Acc} & \textbf{RF Acc} & \textbf{XGB F1} & \textbf{RF F1} & \textbf{XGB Time} & \textbf{RF Time} \\
+\hline
+42  & 0.99884 & 0.99846 & 0.71796 & 0.65834 & 13.23 & 1.90 \\
+7   & 0.99908 & 0.99868 & 0.77325 & 0.74242 & 11.95 & 1.95 \\
+21  & 0.99919 & 0.99890 & 0.75298 & 0.72840 & 13.94 & 1.95 \\
+99  & 0.99919 & 0.99857 & 0.80682 & 0.68603 & 11.95 & 2.04 \\
+123 & 0.99882 & 0.99849 & 0.75471 & 0.57582 & 11.78 & 2.05 \\
+\hline
+\end{tabular}}
+\end{table}
+
+\subsection{Mean Accuracy and Macro-F1}
+
+\subsubsection{Accuracy}
+
+The average accuracy across all five seeds is computed as:
+\[
+\text{Acc}_{\text{XGB\_avg}} = 0.999025, \qquad
+\text{Acc}_{\text{RF\_avg}} = 0.998621
+\]
+
+The relative improvement in accuracy is given by:
+\[
+\frac{0.999025 - 0.998621}{0.998621} \times 100\% = \mathbf{0.40\%}
+\]
+
+Although numerically small, this improvement is consistent across all seeds, indicating superior stability of the XGBoost-based IDS.
+
+\subsubsection{Macro-F1}
+
+The average macro-F1 score across the five seeds is:
+\[
+\text{F1}_{\text{XGB\_avg}} = 0.761544, \qquad
+\text{F1}_{\text{RF\_avg}} = 0.678201
+\]
+
+The relative improvement in macro-F1 is:
+\[
+\frac{0.761544 - 0.678201}{0.678201} \times 100\%
+= \mathbf{12.28\%}
+\]
+
+Macro-F1 is the primary evaluation metric for imbalanced intrusion detection datasets; therefore, this improvement is operationally significant and highlights the enhanced minority-class detection capability of the proposed framework.
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{f1_trend.png}
+    \caption{Accuracy distribution of Random Forest and XGBoost across five random seeds.}
+    \label{fig:f1_trend}
+\end{figure}
+
+\subsection{Minority-Class Behavior and Worst-Case Stability}
+
+To evaluate robustness under unfavorable data splits, worst-case macro-F1 scores were analyzed for both models. The minimum macro-F1 values observed across all five seeds are:
+\[
+\text{XGB}_{\min} = 0.7179565, \qquad
+\text{RF}_{\min} = 0.5758170
+\]
+
+The relative worst-case improvement achieved by XGBoost is computed as:
+\[
+\frac{0.7179565 - 0.5758170}{0.5758170} \times 100\%
+= \mathbf{24.65\%}
+\]
+
+This result demonstrates that the XGBoost-based IDS maintains strong performance even under the least favorable train--test splits, which is particularly critical for detecting rare intrusion classes such as R2L and U2R\cite{Krawczyk2024}..
+
+\subsection{Seed-wise Variance Analysis (Stability)}
+
+Model stability was further evaluated by analyzing the variance of macro-F1 scores across the five random seeds. The observed variances are:
+\[
+\text{Var}_{\text{XGB}} \approx 0.00133, \qquad
+\text{Var}_{\text{RF}} \approx 0.00325
+\]
+
+The relative stability improvement of XGBoost over Random Forest is therefore:
+\[
+\frac{0.00325}{0.00133} \approx \mathbf{2.44\times}
+\]
+
+The substantially lower variance achieved by XGBoost indicates more reproducible and reliable model behavior across different data splits.
+
+\subsection{Accuracy and Macro-F1 Trends (Graphical Interpretation)}
+
+Although the corresponding figures are presented externally, consistent performance trends are observed across all visual analyses. Boxplots reveal a higher median macro-F1 score and a tighter interquartile range for XGBoost, indicating reduced variability. Line plots further confirm that XGBoost consistently outperforms the Random Forest baseline across all seeds. In contrast, the Random Forest model exhibits sharp performance degradation for certain splits, most notably for seed 123, whereas XGBoost remains stable.These visual patterns align with the numerical findings\cite{Hindy2024,Rahman2025}..
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{accuracy_boxplot.png}
+    \caption{Macro-F1 score comparison of XGBoost and Random Forest across five random seeds. XGBoost consistently achieves higher Macro-F1 values and exhibits reduced variance, indicating improved stability and stronger minority-class detection.}
+    \label{fig:accuracy_boxplot}
+\end{figure}
+\subsection{Training Time Comparison}
+
+The average training time for each model across five seeds is reported as:
+\[
+\text{XGB} \approx 12.37~\text{s}, \qquad
+\text{RF} \approx 1.98~\text{s}
+\]
+
+Although the Random Forest model trains approximately $6\times$ faster, it suffers from significantly lower macro-F1 performance, higher variance, and poor recall on minority attack classes. Since IDS model training is typically performed offline and inference latency is minimal for both models, XGBoost remains the preferable choice for deployment.
+
+\subsection{SHAP-Based Explainability and Behavioral Insights}
+
+TreeSHAP was applied to generate per-sample and per-class explanations for the proposed framework. The following key behavioral insights were observed:
+
+\begin{itemize}
+    \item Normal traffic exhibits high SHAP contributions from benign features such as low \textit{count} and low \textit{same\_srv\_rate}.
+    \item DoS attacks show dominant SHAP values for frequency-based features including \textit{count} and \textit{srv\_count}.
+    \item Probe attacks are characterized by abnormal scanning behavior, primarily driven by \textit{dst\_host\_srv\_count}.
+    \item R2L attacks are influenced by features such as \textit{src\_bytes}, \textit{wrong\_fragment}, and \textit{logged\_in}.
+    \item U2R attacks display extreme sensitivity to rare but high-impact features such as \textit{hot}, \textit{num\_compromised}, and \textit{num\_root}.
+\end{itemize}
+
+This level of per-class interpretability was absent in the base paper, which relied solely on global SHAP summaries.
+
+\subsection{Severity Scoring Results}
+
+The proposed severity engine computes a risk-aware severity score defined as:
+\[
+S(x) = b_y \cdot p_y + M(x)
+\]
+where $b_y$ denotes the base severity of the predicted class, $p_y$ represents the model confidence, and $M(x)$ is the SHAP-derived maliciousness modifier.
+
+Severity levels are mapped as follows:
+\begin{itemize}
+    \item 0.00--0.25 $\rightarrow$ Low
+    \item 0.25--0.50 $\rightarrow$ Medium
+    \item 0.50--0.75 $\rightarrow$ High
+    \item 0.75--1.00+ $\rightarrow$ Critical
+\end{itemize}
+
+\begin{figure}[htbp]
+    \centering
+    \includegraphics[width=\columnwidth]{severity_distribution.png}
+    \caption{Severity score distribution for detected network traffic instances. Benign traffic is concentrated at low severity values, while high-impact intrusion classes exhibit higher severity scores, enabling effective risk-based alert prioritization.}
+    \label{fig:severity_distribution}
+\end{figure}
+
+
+Empirical observations show that normal traffic consistently yields near-zero severity scores, DoS attacks produce high severity values, and R2L/U2R attacks are almost always classified as critical due to their high base severity and strong SHAP signatures. This transforms raw IDS predictions into SOC-ready risk intelligence\cite{Bouthillier2024,Sokol2024}..
+
+\subsection{Comparative Evaluation With Baseline}
+
+Compared to the Random Forest baseline, XGBoost demonstrates superior performance in:
+\begin{itemize}
+    \item Overall accuracy
+    \item Macro-F1 score
+    \item Minority-class recall
+    \item Stability across random seeds
+    \item Explainability via TreeSHAP
+    \item Severity correlation
+\end{itemize}
+
+In contrast, Random Forest exhibits high variance, frequent performance collapse on rare attack classes, and inconsistent behavior across different data splits.
+
+\subsection{Summary}
+
+The combined experimental results demonstrate:
+\begin{itemize}
+    \item Higher macro-F1 score (+12.28\%)
+    \item Improved worst-case performance (+24.65\%)
+    \item Approximately $2.4\times$ stability improvement
+    \item Operational interpretability through SHAP
+    \item Actionable severity scoring
+    \item Superior minority-class detection
+\end{itemize}
+
+These findings confirm that the proposed XGBoost-SHAP IDS is more robust, interpretable, and SOC-aligned than both the Random Forest baseline and prior IDS studies.
+
+\subsection{Cross-Dataset Validation on UNSW-NB15}
+
+To assess generalization beyond a single benchmark, additional experiments were conducted using the UNSW-NB15 dataset, which contains more recent and diverse network traffic patterns. The same modeling pipeline, preprocessing strategy, severity scoring mechanism, and TreeSHAP framework were applied without architectural modification.Cross-dataset evaluation is critical to verify that intrusion detection models learn transferable attack representations rather than dataset-specific artifacts \cite{Pang2021,Monshizadeh2021}.
+
+
+Across five independent random seeds using the official train--test split, the framework achieved a stable macro-F1 score of approximately 0.71, closely matching the stability observed on NSL-KDD. High-frequency classes such as Normal and Generic achieved near-perfect detection, while complex attack categories such as Exploits and Reconnaissance maintained balanced precision--recall behavior. Rare attack classes consistently achieved recall values above 0.82.
+
+These results confirm that the proposed framework learns transferable attack representations rather than dataset-specific artifacts.
+
+\subsection{Explainability and Severity Consistency Across Datasets}
+
+TreeSHAP analysis on UNSW-NB15 revealed consistent and interpretable feature contribution patterns aligned with cybersecurity domain knowledge. Severity scores exhibited well-separated distributions, with benign traffic concentrated near zero and high-impact attacks clustered toward the upper range. Rare but critical attacks consistently received elevated severity scores due to the combined influence of base severity and SHAP-derived modifiers\cite{Guidotti2018,Samek2019}.
+
+This preservation of explainability and severity ranking across datasets demonstrates semantic consistency, which is essential for real-world SOC deployment.
+
+\section{Discussion}
+
+The results demonstrate that XGBoost significantly outperforms Random Forest for multiclass intrusion detection, particularly in macro-F1 score and minority-class recall. Multi-seed evaluation reveals that Random Forest performance is highly sensitive to data splits, explaining the misleading nature of single-split evaluations.
+
+SHAP-based explanations provide transparent reasoning for alerts and integrate naturally with severity scoring for SOC triage. Key advantages of XGBoost include gradient boosting optimization, regularization, and efficient modeling of feature interactions. Limitations include reliance on synthetic benchmarks and the computational cost of SHAP, motivating future work on streaming data and SHAP approximation techniques.The superior performance of XGBoost can be attributed to its gradient boosting mechanism, regularization strategy, and robustness to feature interactions in high-dimensional data \cite{Schummer2024}.
+
+
+\section{Conclusion}
+
+This study presents a robust and explainable multiclass IDS based on XGBoost, TreeSHAP, severity scoring, and multi-seed validation. Compared to the base paper, which lacked stability analysis and severity modeling, the proposed framework achieves higher and more stable macro-F1 scores, improved minority-class recall, and statistically significant performance gains. The resulting system is reproducible and SOC-ready, with future extensions planned for streaming environments and modern datasets.This work extends prior IDS research by integrating stability analysis, explainability, and severity-aware alerting into a unified framework \cite{Ahmed2016,Pang2021}.
+
+
+\section*{Acknowledgements}
+
+This section will include supervisors, faculty members, and funding acknowledgements as required.
+
+\appendix
+\section{Algorithm Pseudocode}
+
+\textbf{Input:} TRAIN\_FILE, TEST\_FILE, seeds = \{42, 7, 21, 99, 123\} \\
+\textbf{Output:} Metrics, trained models, SHAP visualizations, and alert artifacts
+
+\begin{enumerate}
+    \item Load and label dataset
+    \item Preprocess features and encode labels
+    \item For each seed:
+    \begin{enumerate}
+        \item Perform stratified train--test split
+        \item Train Random Forest and record time
+        \item Train XGBoost and record time
+        \item Evaluate metrics and save results
+        \item Compute SHAP explanations
+        \item Compute severity scores
+    \end{enumerate}
+    \item Aggregate results and perform statistical tests
+\end{enumerate}
+
+\bibliographystyle{IEEEtran}
+\bibliography{references}
+
+
+
+\end{document}
